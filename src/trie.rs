@@ -8,27 +8,27 @@
 /// elements will be fast, but the cursors implemented in this crate all have
 /// the property that they take at most a number of steps logarithmic in the 
 /// distance to the target key.
-pub trait Cursor {
+pub trait Cursor<'a> {
  	/// A strictly increasing key for enumerated items.
-	type Key: Ord;
+	type Key: Ord+'a;
 	/// An arbitrary payload for each item.
 	type Val;
 	/// Advances the cursor and returns the next item. 
-	fn next(&mut self) -> Option<(Self::Key, Self::Val)>;
+	fn next(&mut self) -> Option<(&'a Self::Key, Self::Val)>;
 	/// Advances the cursor to the first element with key greater or equal to `key`.
-	fn seek(&mut self, key: Self::Key);
+	fn seek(&mut self, key: &Self::Key);
 	/// Returns the key of the next item, if one exists.
-	fn peek(&self) -> Option<Self::Key>;
+	fn peek(&self) -> Option<&'a Self::Key>;
 }
 
 /// A reference to a trie, capable of enumerating ranges of values.
-pub trait TrieRef {
+pub trait TrieRef<'a> {
 	/// The type of cursor the trie reference uses to navigate its elements.
-	type Cursor: Cursor;
+	type Cursor: Cursor<'a>;
 	/// The number of keys in this layer of the trie.
-	fn keys(&self) -> usize;
+	fn keys_cnt(&self) -> usize;
 	/// Returns a cursor for a range of elements in the trie.
-	fn cursor(&self, lower: usize, upper: usize) -> Self::Cursor;
+	fn cursor(&'a self, lower: usize, upper: usize) -> Self::Cursor;
 }
 
 /// A trie with owned data that may be pushed into. 
@@ -170,10 +170,10 @@ impl<K:Ord+Clone, L: TrieStorage> TrieStorage for TrieLayer<K, L> {
 	}
 }
 
-impl<'a, K:Ord+'a, L:'a> TrieRef for &'a TrieLayer<K,L> where &'a L: TrieRef {
+impl<'a, K:Ord+'a, L:'a> TrieRef<'a> for TrieLayer<K,L> where L: TrieRef<'a> {
 	type Cursor = TrieCursor<'a, K, L>;
-	fn keys(&self) -> usize { self.keys.len() }
-	fn cursor(&self, lower: usize, upper: usize) -> Self::Cursor {
+	fn keys_cnt(&self) -> usize { self.keys.len() }
+	fn cursor(&'a self, lower: usize, upper: usize) -> Self::Cursor {
 		// type annotations apparently important to keep Rust from asploding.
 		TrieCursor::<'a,K,L> {
 			index: 0, 
@@ -183,19 +183,18 @@ impl<'a, K:Ord+'a, L:'a> TrieRef for &'a TrieLayer<K,L> where &'a L: TrieRef {
 	}
 }
 
-/// A cursor over pairs `(&K, TCursor<'a,K,T,V>)`.
-pub struct TrieCursor<'a, K:Ord+'a, L:'a> where &'a L: TrieRef {
+pub struct TrieCursor<'a, K:Ord+'a, L:'a> {
 	pub index: usize,
 	pub keys: &'a [(K, usize)],
 	pub vals: &'a L,
 }
 
-impl<'a, K:Ord+'a, L> Cursor for TrieCursor<'a,K,L> where &'a L: TrieRef {
+impl<'a, K:Ord+'a, L> Cursor<'a> for TrieCursor<'a,K,L> where L: TrieRef<'a> {
 
-	type Key = &'a K;
-	type Val = <&'a L as TrieRef>::Cursor;
+	type Key = K;
+	type Val = <L as TrieRef<'a>>::Cursor;
 
-	fn next(&mut self) -> Option<(Self::Key, Self::Val)> {
+	fn next(&mut self) -> Option<(&'a Self::Key, Self::Val)> {
 		if self.index < self.keys.len() {
 			let current = self.index;
 			self.index += 1;
@@ -213,10 +212,10 @@ impl<'a, K:Ord+'a, L> Cursor for TrieCursor<'a,K,L> where &'a L: TrieRef {
 		}
 	}
 
-	fn seek(&mut self, key: Self::Key) {
+	fn seek(&mut self, key: &Self::Key) {
 		self.index += advance(&self.keys[self.index ..], |x| &x.0 < key);
 	}
-	fn peek(&self) -> Option<Self::Key> {
+	fn peek(&self) -> Option<&'a Self::Key> {
 		if self.index < self.keys.len() { Some(&self.keys[self.index].0) } else { None }
 	}
 }
@@ -275,13 +274,12 @@ impl<K:Ord+Clone> TrieStorage for Vec<(K, i32)> {
 	fn extend_tuple(&mut self, tuple: Self::Item, _is_new: bool) {
 		self.push(tuple);
 	}
-
 }	
 
-impl<'a, K:Ord+'a, V:'a> TrieRef for &'a Vec<(K,V)> {
+impl<'a, K:Ord+'a, V:'a> TrieRef<'a> for Vec<(K,V)> {
 	type Cursor = SliceCursor<'a,K,V>;
-	fn keys(&self) -> usize { self.len() }
-	fn cursor(&self, lower: usize, upper: usize) -> Self::Cursor {
+	fn keys_cnt(&self) -> usize { self.len() }
+	fn cursor(&'a self, lower: usize, upper: usize) -> Self::Cursor {
 		SliceCursor::<'a,K,V> {
 			index: 0,
 			slice: &self[lower .. upper],
@@ -294,11 +292,11 @@ pub struct SliceCursor<'a, K:Ord+'a, V:'a> {
 	pub slice: &'a [(K, V)],
 }
 
-impl<'a, K:Ord+'a, V:'a> Cursor for SliceCursor<'a,K,V> {
-	type Key = &'a K;
+impl<'a, K:Ord+'a, V:'a> Cursor<'a> for SliceCursor<'a,K,V> {
+	type Key = K;
 	type Val = &'a V;
 
-	fn next(&mut self) -> Option<(Self::Key, Self::Val)> {
+	fn next(&mut self) -> Option<(&'a Self::Key, Self::Val)> {
 		if self.index < self.slice.len() {
 			self.index += 1;
 			Some((&self.slice[self.index-1].0, &self.slice[self.index-1].1))
@@ -308,11 +306,11 @@ impl<'a, K:Ord+'a, V:'a> Cursor for SliceCursor<'a,K,V> {
 		}
 	}
 
-	fn seek(&mut self, key: Self::Key) {
+	fn seek(&mut self, key: &Self::Key) {
 		self.index += advance(&self.slice[self.index ..], |x| &x.0 < key)
 	}
 
-	fn peek(&self) -> Option<Self::Key> {
+	fn peek(&self) -> Option<&'a Self::Key> {
 		if self.index < self.slice.len() { Some(&self.slice[self.index].0) } else { None }
 	}
 }

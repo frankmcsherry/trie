@@ -5,7 +5,8 @@ extern crate graph_map;
 // use trie::merge::Merger;
 use trie::arbor::Arbor;
 
-use trie::trie::{TrieLayer, TrieRef};
+use trie::trie::{TrieLayer, TrieRef, TrieStorage};
+use trie::merge::CursorMerger;
 
 use graph_map::GraphMMap;
 
@@ -48,9 +49,23 @@ fn test_arbor(batch: usize) {
   	arbor_reverse.extend_ordered(reverse.drain(..));
   	println!("elapsed: {:?}", timer.elapsed());
 
-    let mut cursor = arbor_forward.cursor();
-    while let Some(something) = cursor.next() {
+    // let mut cursor = arbor_forward.cursor();
+    // while let Some(something) = cursor.next() {
 
-    }
+    // }
+
+    let mut x = Vec::<(u32,i32)>::new();
+    let mut c = (&x).cursor(0,0);
+
+    let mut y = TrieLayer::<u32, Vec<(u32,i32)>>::new();
+    // let mut c = (&y).cursor(0,0);
+
+    let arbor_test = Arbor::<Vec<(u32,i32)>>::new();
+
+    let z = arbor_test.cursor();
+
+    // let mut z = CursorMerger::new();
+    // z.push((&y).cursor(0,0));
+    // z.sort();
 
 }

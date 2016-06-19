@@ -20,7 +20,7 @@ pub struct Arbor<T: TrieStorage> {
 	tries: Vec<T>,
 }
 
-impl<T: TrieStorage+::std::fmt::Debug+Sized> Arbor<T> {
+impl<T: TrieStorage> Arbor<T> {
 
 	pub fn new() -> Arbor<T> {
 		Arbor { tries: vec![] }
@@ -35,12 +35,6 @@ impl<T: TrieStorage+::std::fmt::Debug+Sized> Arbor<T> {
 	pub fn push(&mut self, tuple: T::Item) {
 		self.append(T::from_ordered(Some(tuple).into_iter()));
 	}
-
-	// /// Adds a unordered sequence of tuples to the collection.
-	// pub fn extend<I: Iterator<Item=(K,T,V,isize)>>(&mut self, iterator: I) {
-	// 	let mut vector = iterator.collect::<Vec<_>>();
-	// 	self.append(Trie::from_vector(&mut vector));
-	// }
 
 	/// Adds an ordered sequence of tuples to the collection.
 	pub fn extend_ordered<I: Iterator<Item=T::Item>>(&mut self, iterator: I) {
@@ -89,11 +83,13 @@ impl<T: TrieStorage+::std::fmt::Debug+Sized> Arbor<T> {
 			}
 		}
 	}
+}
 
-	pub fn cursor<'a>(&'a self) -> CursorMerger<<&'a T as TrieRef>::Cursor> where &'a T : TrieRef {
-		let mut result = CursorMerger::<<&'a T as TrieRef>::Cursor>::new();
+impl<T: TrieStorage> Arbor<T> {
+	pub fn cursor<'a>(&'a self) -> CursorMerger<'a, <T as TrieRef<'a>>::Cursor> where T : TrieRef<'a> {
+		let mut result = CursorMerger::<'a, <T as TrieRef<'a>>::Cursor>::new();
 		for trie in &self.tries {
-			result.push(trie.cursor(0, trie.keys()));
+			result.push(trie.cursor(0, trie.keys_cnt()));
 		}
 		result.sort();
 		result

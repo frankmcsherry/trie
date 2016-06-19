@@ -126,15 +126,15 @@ use trie::Cursor;
 // }
 
 
-pub struct CursorMerger<C: Cursor> {
+pub struct CursorMerger<'a, C: Cursor<'a>> {
 	started: Option<usize>,
-	cursors: Vec<((C::Key,C::Val), C)>,
+	cursors: Vec<((&'a C::Key, C::Val), C)>,
 }
 
-impl<C: Cursor> CursorMerger<C> {
+impl<'a, C: Cursor<'a>> CursorMerger<'a, C> {
 	pub fn new() -> Self { CursorMerger { started: None, cursors: vec![] } }
 
-	pub fn next(&mut self) -> Option<&[((C::Key, C::Val), C)]> {
+	pub fn next(&'a mut self) -> Option<&[((&'a C::Key, C::Val), C)]> {
 
 		// if started; advance cursor things
 		if let Some(previous) = self.started {
@@ -192,12 +192,12 @@ impl<C: Cursor> CursorMerger<C> {
 		}
 	}
 
-	pub fn push(&mut self, mut cursor: C) {
+	pub fn push(&'a mut self, mut cursor: C) {
 		if let Some(next) = cursor.next() {
 			self.cursors.push((next, cursor));
 		}
 	}
-	pub fn sort(&mut self) {
+	pub fn sort(&'a mut self) {
 		self.cursors.sort_by(|x,y| (x.0).0.cmp(&(y.0).0));
 	}
 }
