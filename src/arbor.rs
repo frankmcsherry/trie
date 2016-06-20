@@ -87,11 +87,13 @@ impl<T: TrieStorage> Arbor<T> {
 
 impl<T: TrieStorage> Arbor<T> {
 	pub fn cursor<'a>(&'a self) -> CursorMerger<'a, <T as TrieRef<'a>>::Cursor> where T : TrieRef<'a> {
-		let mut result = CursorMerger::<'a, <T as TrieRef<'a>>::Cursor>::new();
-		for trie in &self.tries {
-			result.push(trie.cursor(0, trie.keys_cnt()));
-		}
-		result.sort();
-		result
+		CursorMerger::<'a, <T as TrieRef<'a>>::Cursor>::from(self.tries.iter().map(|x| x.cursor(0, x.keys_cnt())))
+
+		// let mut result = CursorMerger::<'a, <T as TrieRef<'a>>::Cursor>::new();
+		// for trie in &self.tries {
+		// 	result.push(trie.cursor(0, trie.keys_cnt()));
+		// }
+		// result.sort();
+		// result
 	}
 }

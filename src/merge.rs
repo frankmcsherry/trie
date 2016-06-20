@@ -132,9 +132,9 @@ pub struct CursorMerger<'a, C: Cursor<'a>> {
 }
 
 impl<'a, C: Cursor<'a>> CursorMerger<'a, C> {
-	pub fn new() -> Self { CursorMerger { started: None, cursors: vec![] } }
+	pub fn new() -> Self { CursorMerger::<'a, C> { started: None, cursors: vec![] } }
 
-	pub fn next(&'a mut self) -> Option<&[((&'a C::Key, C::Val), C)]> {
+	pub fn next(&mut self) -> Option<&[((&'a C::Key, C::Val), C)]> {
 
 		// if started; advance cursor things
 		if let Some(previous) = self.started {
@@ -192,13 +192,24 @@ impl<'a, C: Cursor<'a>> CursorMerger<'a, C> {
 		}
 	}
 
-	pub fn push(&'a mut self, mut cursor: C) {
-		if let Some(next) = cursor.next() {
-			self.cursors.push((next, cursor));
+	pub fn from<I: Iterator<Item=C>>(iterator: I) -> Self {
+		let mut result = CursorMerger::<'a, C>::new();
+		for mut item in iterator {
+			if let Some(next) = item.next() {
+				result.cursors.push((next, item));
+			}
 		}
+		result.cursors.sort_by(|x,y| (x.0).0.cmp(&(y.0).0));		
+		result
 	}
-	pub fn sort(&'a mut self) {
-		self.cursors.sort_by(|x,y| (x.0).0.cmp(&(y.0).0));
-	}
+
+	// pub fn push(&'a mut self, mut cursor: C) {
+	// 	if let Some(next) = cursor.next() {
+	// 		self.cursors.push((next, cursor));
+	// 	}
+	// }
+	// pub fn sort(&'a mut self) {
+	// 	self.cursors.sort_by(|x,y| (x.0).0.cmp(&(y.0).0));
+	// }
 }
 

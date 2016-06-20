@@ -22,13 +22,17 @@ pub trait Cursor<'a> {
 }
 
 /// A reference to a trie, capable of enumerating ranges of values.
-pub trait TrieRef<'a> {
+pub trait TrieRef<'a> : 'a {
 	/// The type of cursor the trie reference uses to navigate its elements.
 	type Cursor: Cursor<'a>;
 	/// The number of keys in this layer of the trie.
 	fn keys_cnt(&self) -> usize;
 	/// Returns a cursor for a range of elements in the trie.
 	fn cursor(&'a self, lower: usize, upper: usize) -> Self::Cursor;
+	///
+	fn enumerate(&'a self) -> Self::Cursor {
+		self.cursor(0, self.keys_cnt())
+	}
 }
 
 /// A trie with owned data that may be pushed into. 
@@ -220,6 +224,15 @@ impl<'a, K:Ord+'a, L> Cursor<'a> for TrieCursor<'a,K,L> where L: TrieRef<'a> {
 	}
 }
 
+impl<'a, K:Ord+'a, L:'a> Clone for TrieCursor<'a,K,L> {
+	fn clone(&self) -> Self {
+		TrieCursor::<'a,K,L> {
+			index: self.index,
+			keys: self.keys,
+			vals: self.vals,
+		}
+	}
+}
 
 /// A trie with owned data that may be pushed into. 
 impl<K:Ord+Clone> TrieStorage for Vec<(K, i32)> {
@@ -312,6 +325,15 @@ impl<'a, K:Ord+'a, V:'a> Cursor<'a> for SliceCursor<'a,K,V> {
 
 	fn peek(&self) -> Option<&'a Self::Key> {
 		if self.index < self.slice.len() { Some(&self.slice[self.index].0) } else { None }
+	}
+}
+
+impl<'a, K:Ord+'a, V:'a> Clone for SliceCursor<'a,K,V> {
+	fn clone(&self) -> Self {
+		SliceCursor::<'a,K,V> {
+			index: self.index,
+			slice: self.slice,
+		}
 	}
 }
 
