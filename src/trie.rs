@@ -115,7 +115,7 @@ impl<K:Ord+Clone, L: TrieStorage> TrieStorage for TrieLayer<K, L> {
 		let (trie1, mut lower1, upper1) = other1;
 		let (trie2, mut lower2, upper2) = other2;
 
-		self.keys.reserve(::std::cmp::max(upper1-lower1, upper2-lower2));
+		self.keys.reserve(upper1 + upper2 - lower1 - lower2);
 
 		// while both mergees are still active
 		while lower1 < upper1 && lower2 < upper2 {
@@ -131,14 +131,15 @@ impl<K:Ord+Clone, L: TrieStorage> TrieStorage for TrieLayer<K, L> {
 					// need to merge vals and then push the key if the merge pushed vals.
 					let v_lower1 = if lower1 == 0 { 0 } else { trie1.keys[lower1-1].1 };
 					let v_lower2 = if lower2 == 0 { 0 } else { trie2.keys[lower2-1].1 };
-
 					let v_upper1 = trie1.keys[lower1].1;
 					let v_upper2 = trie2.keys[lower2].1;
 
+					// record vals_length so we can tell if anything was pushed.
 					let v_len = self.vals.keys();
-
-					self.vals.extend_merge((&trie1.vals, v_lower1, v_upper1), (&trie2.vals, v_lower2, v_upper2));
-
+					self.vals.extend_merge(
+						(&trie1.vals, v_lower1, v_upper1), 
+						(&trie2.vals, v_lower2, v_upper2)
+					);
 					if self.vals.keys() > v_len {
 						self.keys.push((trie1.keys[lower1].0.clone(), self.vals.keys()));
 					}
@@ -179,11 +180,7 @@ impl<'a, K:Ord+'a, L:'a> TrieRef<'a> for TrieLayer<K,L> where L: TrieRef<'a> {
 	fn keys_cnt(&self) -> usize { self.keys.len() }
 	fn cursor(&'a self, lower: usize, upper: usize) -> Self::Cursor {
 		// type annotations apparently important to keep Rust from asploding.
-		TrieCursor::<'a,K,L> {
-			index: 0, 
-			keys: &self.keys[lower .. upper],
-			vals: &self.vals,
-		}
+		TrieCursor::<'a,K,L>::new(&self.keys[lower .. upper], &self.vals)
 	}
 }
 
@@ -191,6 +188,16 @@ pub struct TrieCursor<'a, K:Ord+'a, L:'a> {
 	pub index: usize,
 	pub keys: &'a [(K, usize)],
 	pub vals: &'a L,
+}
+
+impl<'a, K:Ord+'a, L> TrieCursor<'a,K,L> where L: TrieRef<'a> {
+	pub fn new(keys: &'a [(K, usize)], vals: &'a L) -> TrieCursor<'a,K,L> {
+		TrieCursor::<'a,K,L> {
+			index: 0, 
+			keys: keys,
+			vals: vals,
+		}
+	}
 }
 
 impl<'a, K:Ord+'a, L> Cursor<'a> for TrieCursor<'a,K,L> where L: TrieRef<'a> {
@@ -241,29 +248,35 @@ impl<K:Ord+Clone> TrieStorage for Vec<(K, i32)> {
 	fn with_capacity(other1: &Self, other2: &Self) -> Self { 
 		Vec::with_capacity(other1.len() + other2.len()) 
 	}
-	/// Important to be able to ask the current offset.
-	fn keys(&self) -> usize {
-		self.len()
-	}
+	fn keys(&self) -> usize { self.len() }
 	fn tuples(&self) -> usize { self.len() }
-	/// Extends the trie by the range of the supplied trie.
 	fn extend_trie(&mut self, other: &Self, lower: usize, upper: usize) {
+		debug_assert!(lower < upper);
 		self.reserve(upper - lower);
 		self.extend_from_slice(&other[lower .. upper]);
+
+		// unsafe {
+		//     let position = self.len();
+		//     let slice = &other[lower .. upper];
+		//     ::std::ptr::copy_nonoverlapping(other.as_ptr(), self.as_mut_ptr().offset(position as isize), slice.len());
+		//     self.set_len(position + slice.len());
+		// }
 	}
-	/// Merges two other tries, with supplied lower and upper indices, into this trie.
 	fn extend_merge(&mut self, other1: (&Self, usize, usize), other2: (&Self, usize, usize)) {
 
 		let (vec1, mut lower1, upper1) = other1;
 		let (vec2, mut lower2, upper2) = other2;
 
-		self.reserve(::std::cmp::max(upper1-lower1, upper2-lower2));
+		// perhaps overly aggressive
+		self.reserve(upper1 + upper2 - lower1 - lower2);
 
 		while lower1 < upper1 && lower2 < upper2 {
 			match vec1[lower1].0.cmp(&vec2[lower2].0) {
 				::std::cmp::Ordering::Less => {
-					self.push(vec1[lower1].clone());
-					lower1 += 1;
+					let step = advance(&vec1[lower1..upper1], |x| x.0 < vec2[lower2].0);
+					assert!(step > 0);
+					self.extend_trie(&vec1, lower1, lower1 + step);
+					lower1 += step;
 				}
 				::std::cmp::Ordering::Equal => {
 					let count = vec1[lower1].1 + vec2[lower2].1;
@@ -274,8 +287,10 @@ impl<K:Ord+Clone> TrieStorage for Vec<(K, i32)> {
 					lower2 += 1;
 				}
 				::std::cmp::Ordering::Greater => {
-					self.push(vec2[lower2].clone());
-					lower2 += 1;
+					let step = advance(&vec2[lower2..upper2], |x| x.0 < vec1[lower1].0);
+					assert!(step > 0);
+					self.extend_trie(&vec2, lower2, lower2 + step);
+					lower2 += step;
 				}
 			}
 		}
@@ -283,7 +298,6 @@ impl<K:Ord+Clone> TrieStorage for Vec<(K, i32)> {
 		if lower1 < upper1 { self.extend_trie(&vec1, lower1, upper1); }
 		if lower2 < upper2 { self.extend_trie(&vec2, lower2, upper2); }
 	}
-	/// Pushes one tuple on; used for trie construction.
 	fn extend_tuple(&mut self, tuple: Self::Item, _is_new: bool) {
 		self.push(tuple);
 	}
@@ -293,16 +307,22 @@ impl<'a, K:Ord+'a, V:'a> TrieRef<'a> for Vec<(K,V)> {
 	type Cursor = SliceCursor<'a,K,V>;
 	fn keys_cnt(&self) -> usize { self.len() }
 	fn cursor(&'a self, lower: usize, upper: usize) -> Self::Cursor {
-		SliceCursor::<'a,K,V> {
-			index: 0,
-			slice: &self[lower .. upper],
-		}
+		SliceCursor::<'a,K,V>::new(&self[lower .. upper])
 	}
 }
 
 pub struct SliceCursor<'a, K:Ord+'a, V:'a> {
-	pub index: usize,
-	pub slice: &'a [(K, V)],
+	index: usize,
+	slice: &'a [(K, V)],
+}
+
+impl<'a, K:Ord+'a, V:'a> SliceCursor<'a, K, V> {
+	pub fn new(slice: &'a [(K, V)]) -> SliceCursor<'a,K,V> {
+		SliceCursor {
+			index: 0,
+			slice: slice,
+		}
+	}
 }
 
 impl<'a, K:Ord+'a, V:'a> Cursor<'a> for SliceCursor<'a,K,V> {
@@ -311,8 +331,9 @@ impl<'a, K:Ord+'a, V:'a> Cursor<'a> for SliceCursor<'a,K,V> {
 
 	fn next(&mut self) -> Option<(&'a Self::Key, Self::Val)> {
 		if self.index < self.slice.len() {
+			let result = (&self.slice[self.index].0, &self.slice[self.index].1);
 			self.index += 1;
-			Some((&self.slice[self.index-1].0, &self.slice[self.index-1].1))
+			Some(result)
 		}
 		else {
 			None

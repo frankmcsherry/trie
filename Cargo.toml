@@ -9,9 +9,9 @@ rand="*"
 [dependencies.graph_map]
 git="http://github.com/frankmcsherry/graph-map"
 
-#[profile.release]
-#opt-level = 3
-#debug = true
-#rpath = false
-#lto = false
-#debug-assertions = false
+[profile.release]
+opt-level = 3
+debug = true
+rpath = false
+lto = false
+debug-assertions = false

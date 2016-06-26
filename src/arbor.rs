@@ -22,6 +22,7 @@ pub struct Arbor<T: TrieStorage> {
 
 impl<T: TrieStorage> Arbor<T> {
 
+	/// Allocates a new empty arbor.
 	pub fn new() -> Arbor<T> {
 		Arbor { tries: vec![] }
 	}
@@ -52,10 +53,7 @@ impl<T: TrieStorage> Arbor<T> {
 	/// a size within a factor of two of the smallest trie the arbor currently
 	/// manages. This can be quite *not fast*, but it should be improved with
 	/// progressive merging.
-	#[inline(never)]
 	pub fn append(&mut self, trie: T) {
-
-		// println!("appending length: {}", trie.total_length());
 
 		// This method could be optimized to search out an empty location where
 		// the trie can be inserted. It presently accumulates up any small tries
@@ -86,14 +84,8 @@ impl<T: TrieStorage> Arbor<T> {
 }
 
 impl<T: TrieStorage> Arbor<T> {
+	/// Provides a cursor for traversing the arbor's contents.
 	pub fn cursor<'a>(&'a self) -> CursorMerger<'a, <T as TrieRef<'a>>::Cursor> where T : TrieRef<'a> {
-		CursorMerger::<'a, <T as TrieRef<'a>>::Cursor>::from(self.tries.iter().map(|x| x.cursor(0, x.keys_cnt())))
-
-		// let mut result = CursorMerger::<'a, <T as TrieRef<'a>>::Cursor>::new();
-		// for trie in &self.tries {
-		// 	result.push(trie.cursor(0, trie.keys_cnt()));
-		// }
-		// result.sort();
-		// result
+		CursorMerger::from(self.tries.iter().map(|x| x.cursor(0, x.keys_cnt())))
 	}
 }
