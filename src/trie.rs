@@ -19,6 +19,8 @@ pub trait Cursor<'a> {
 	fn seek(&mut self, key: &Self::Key);
 	/// Returns the key of the next item, if one exists.
 	fn peek(&self) -> Option<&'a Self::Key>;
+	/// Returns the number of items remaining.
+	fn size(&self) -> usize;
 }
 
 /// A reference to a trie, capable of enumerating ranges of values.
@@ -229,6 +231,9 @@ impl<'a, K:Ord+'a, L> Cursor<'a> for TrieCursor<'a,K,L> where L: TrieRef<'a> {
 	fn peek(&self) -> Option<&'a Self::Key> {
 		if self.index < self.keys.len() { Some(&self.keys[self.index].0) } else { None }
 	}
+	fn size(&self) -> usize {
+		self.keys.len() - self.index
+	}
 }
 
 impl<'a, K:Ord+'a, L:'a> Clone for TrieCursor<'a,K,L> {
@@ -346,6 +351,9 @@ impl<'a, K:Ord+'a, V:'a> Cursor<'a> for SliceCursor<'a,K,V> {
 
 	fn peek(&self) -> Option<&'a Self::Key> {
 		if self.index < self.slice.len() { Some(&self.slice[self.index].0) } else { None }
+	}
+	fn size(&self) -> usize {
+		self.slice.len() - self.index
 	}
 }
 
