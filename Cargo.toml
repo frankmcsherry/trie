@@ -5,6 +5,7 @@ authors = ["Frank McSherry <fmcsherry@me.com>"]
 
 [dependencies]
 rand="*"
+fnv="1.0.2"
 
 [dependencies.graph_map]
 git="http://github.com/frankmcsherry/graph-map"

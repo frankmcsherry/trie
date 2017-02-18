@@ -27,17 +27,31 @@ impl<T: TrieStorage> Arbor<T> {
 		Arbor { tries: vec![] }
 	}
 
+	/// Reports the number of tuples across all managed tries.
+	///
+	/// Note that this number may be greater than the number of distinct elements
+	/// enumerated by `cursor`, which has the opportunity to merge like elements.
+	pub fn size(&self) -> usize {
+		let mut count = 0;
+		for trie in &self.tries {
+			count += trie.tuples();
+		}
+		count
+	}
+
 	/// Adds a single tuple to the collection.
 	///
 	/// This method should be called rarely if possible. It performs 
 	/// allocation for each invocation, which can be avoided by using
-	/// batch insertion methods like `extend`, `extend_ordered`, and
-	/// `append`.
+	/// batch insertion methods like `extend_ordered` and `append`.
 	pub fn push(&mut self, tuple: T::Item) {
 		self.append(T::from_ordered(Some(tuple).into_iter()));
 	}
 
 	/// Adds an ordered sequence of tuples to the collection.
+	///
+	/// If the tuples aren't in order, something horrible probably happens.
+	/// Nothing memory unsafe, but ... why would you do this?
 	pub fn extend_ordered<I: Iterator<Item=T::Item>>(&mut self, iterator: I) {
 		self.append(T::from_ordered(iterator));
 	}
@@ -46,7 +60,7 @@ impl<T: TrieStorage> Arbor<T> {
 	///
 	/// This method can be helpful if the resources required for the trie
 	/// representation are already available, and avoids re-allocating them
-	/// in `extend_ordered`. The method is also quite fast in this case, as
+	/// in `extend_ordered`. The method can be quite fast in this case, as
 	/// it does not need to re-process every tuple in the input batch.
 	///
 	/// The method will perform merging of tries if the introduced trie has

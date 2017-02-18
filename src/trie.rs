@@ -31,7 +31,7 @@ pub trait TrieRef<'a> : 'a {
 	fn keys_cnt(&self) -> usize;
 	/// Returns a cursor for a range of elements in the trie.
 	fn cursor(&'a self, lower: usize, upper: usize) -> Self::Cursor;
-	///
+	/// Returns a cursor for the full range of elements in the trie.
 	fn enumerate(&'a self) -> Self::Cursor {
 		self.cursor(0, self.keys_cnt())
 	}
@@ -55,6 +55,12 @@ pub trait TrieStorage : Sized {
 	fn extend_merge(&mut self, other1: (&Self, usize, usize), other2: (&Self, usize, usize));
 	/// Pushes one tuple on; used for trie construction.
 	fn extend_tuple(&mut self, tuple: Self::Item, is_new: bool);
+
+	fn merge(&self, other: &Self) -> Self {
+		let mut result = Self::with_capacity(self, other);
+		result.extend_merge((self, 0, self.keys()), (other, 0, other.keys()));
+		result
+	}
 
 	/// Creates a new trie from an ordered sequence of items.
 	fn from_ordered<I: Iterator<Item=Self::Item>>(iter: I) -> Self {
@@ -124,7 +130,7 @@ impl<K:Ord+Clone, L: TrieStorage> TrieStorage for TrieLayer<K, L> {
 			match (trie1.keys[lower1].0).cmp(&(trie2.keys[lower2].0)) {
 				::std::cmp::Ordering::Less => {
 					// determine how far we can advance lower1 until we reach/pass lower2
-					let step = advance(&trie1.keys[lower1..upper1], |x| x.0 < trie2.keys[lower2].0);
+					let step = 1 + advance(&trie1.keys[(1+lower1)..upper1], |x| x.0 < trie2.keys[lower2].0);
 					assert!(step > 0);
 					self.extend_trie(trie1, lower1, lower1 + step);
 					lower1 += step;
@@ -151,7 +157,7 @@ impl<K:Ord+Clone, L: TrieStorage> TrieStorage for TrieLayer<K, L> {
 				} 
 				::std::cmp::Ordering::Greater => {
 					// determine how far we can advance lower2 until we reach/pass lower1
-					let step = advance(&trie2.keys[lower2..upper2], |x| x.0 < trie1.keys[lower1].0);
+					let step = 1 + advance(&trie2.keys[(1+lower2)..upper2], |x| x.0 < trie1.keys[lower1].0);
 					assert!(step > 0);
 					self.extend_trie(trie2, lower2, lower2 + step);
 					lower2 += step;
@@ -225,8 +231,10 @@ impl<'a, K:Ord+'a, L> Cursor<'a> for TrieCursor<'a,K,L> where L: TrieRef<'a> {
 		}
 	}
 
+	#[inline(never)]
 	fn seek(&mut self, key: &Self::Key) {
 		self.index += advance(&self.keys[self.index ..], |x| &x.0 < key);
+		// assert!(self.index >= self.keys.len() || &self.keys[self.index].0 >= key);
 	}
 	fn peek(&self) -> Option<&'a Self::Key> {
 		if self.index < self.keys.len() { Some(&self.keys[self.index].0) } else { None }
@@ -260,12 +268,75 @@ impl<K:Ord+Clone> TrieStorage for Vec<(K, i32)> {
 		self.reserve(upper - lower);
 		self.extend_from_slice(&other[lower .. upper]);
 
-		// unsafe {
-		//     let position = self.len();
-		//     let slice = &other[lower .. upper];
-		//     ::std::ptr::copy_nonoverlapping(other.as_ptr(), self.as_mut_ptr().offset(position as isize), slice.len());
-		//     self.set_len(position + slice.len());
-		// }
+	// unsafe {
+	//     let position = self.len();
+	//     let slice = &other[lower .. upper];
+	//     ::std::ptr::copy_nonoverlapping(other.as_ptr(), self.as_mut_ptr().offset(position as isize), slice.len());
+	//     self.set_len(position + slice.len());
+	// }
+	}
+	fn extend_merge(&mut self, other1: (&Self, usize, usize), other2: (&Self, usize, usize)) {
+
+		let (vec1, mut lower1, upper1) = other1;
+		let (vec2, mut lower2, upper2) = other2;
+
+		// perhaps overly aggressive
+		self.reserve(upper1 + upper2 - lower1 - lower2);
+
+		while lower1 < upper1 && lower2 < upper2 {
+			match vec1[lower1].0.cmp(&vec2[lower2].0) {
+				::std::cmp::Ordering::Less => {
+					let step = 1 + advance(&vec1[(1+lower1)..upper1], |x| x.0 < vec2[lower2].0);
+					assert!(step > 0);
+					self.extend_trie(&vec1, lower1, lower1 + step);
+					lower1 += step;
+				}
+				::std::cmp::Ordering::Equal => {
+					let count = vec1[lower1].1 + vec2[lower2].1;
+					if count != 0 {
+						self.push((vec1[lower1].0.clone(), count));
+					}
+					lower1 += 1;
+					lower2 += 1;
+				}
+				::std::cmp::Ordering::Greater => {
+					let step = 1 + advance(&vec2[(1+lower2)..upper2], |x| x.0 < vec1[lower1].0);
+					assert!(step > 0);
+					self.extend_trie(&vec2, lower2, lower2 + step);
+					lower2 += step;
+				}
+			}
+		}
+
+		if lower1 < upper1 { self.extend_trie(&vec1, lower1, upper1); }
+		if lower2 < upper2 { self.extend_trie(&vec2, lower2, upper2); }
+	}
+	fn extend_tuple(&mut self, tuple: Self::Item, _is_new: bool) {
+		self.push(tuple);
+	}
+}	
+
+
+/// A trie with owned data that may be pushed into. 
+impl<K:Ord+Clone> TrieStorage for Vec<(K, isize)> {
+	type Item = (K, isize);
+	fn new() -> Self { vec![] }
+	fn with_capacity(other1: &Self, other2: &Self) -> Self { 
+		Vec::with_capacity(other1.len() + other2.len()) 
+	}
+	fn keys(&self) -> usize { self.len() }
+	fn tuples(&self) -> usize { self.len() }
+	fn extend_trie(&mut self, other: &Self, lower: usize, upper: usize) {
+		debug_assert!(lower < upper);
+		self.reserve(upper - lower);
+		self.extend_from_slice(&other[lower .. upper]);
+
+	// unsafe {
+	//     let position = self.len();
+	//     let slice = &other[lower .. upper];
+	//     ::std::ptr::copy_nonoverlapping(other.as_ptr(), self.as_mut_ptr().offset(position as isize), slice.len());
+	//     self.set_len(position + slice.len());
+	// }
 	}
 	fn extend_merge(&mut self, other1: (&Self, usize, usize), other2: (&Self, usize, usize)) {
 
@@ -306,7 +377,7 @@ impl<K:Ord+Clone> TrieStorage for Vec<(K, i32)> {
 	fn extend_tuple(&mut self, tuple: Self::Item, _is_new: bool) {
 		self.push(tuple);
 	}
-}	
+}
 
 impl<'a, K:Ord+'a, V:'a> TrieRef<'a> for Vec<(K,V)> {
 	type Cursor = SliceCursor<'a,K,V>;
@@ -345,6 +416,7 @@ impl<'a, K:Ord+'a, V:'a> Cursor<'a> for SliceCursor<'a,K,V> {
 		}
 	}
 
+	#[inline(never)]
 	fn seek(&mut self, key: &Self::Key) {
 		self.index += advance(&self.slice[self.index ..], |x| &x.0 < key)
 	}
@@ -372,6 +444,7 @@ impl<'a, K:Ord+'a, V:'a> Clone for SliceCursor<'a,K,V> {
 /// stays false once it becomes false, a joint property of the predicate
 /// and the slice. This allows `advance` to use exponential search to 
 /// count the number of elements in time logarithmic in the result.
+#[inline(never)]
 pub fn advance<T, F: Fn(&T)->bool>(slice: &[T], function: F) -> usize {
 
 	// start with no advance

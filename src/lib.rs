@@ -11,8 +11,11 @@
 //! can merge the contents of multiple tries to provide the appearance of one ordered
 //! sequence.
 
+extern crate fnv;
+
 pub mod merge;
 pub mod arbor;
+pub mod arbor_index;
 pub mod trie;
 
 pub use arbor::Arbor;
